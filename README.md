@@ -1,4 +1,4 @@
-# Epi2Hit
+# Epi2Hit workflow
 
 ![Epi2Hit Workflow](https://github.com/panprostate/Epi2Hit/blob/main/img/workflow.png)
 
