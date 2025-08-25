@@ -470,14 +470,14 @@ def check_correlation_threshold(correlation_matrix, threshold=0.6):
     ).stack()
     return (upper_triangle > threshold).all()
 
-def process_probes(me_filtered2, correlation_threshold=0.6, num_cores=16):
+def process_probes(me_filtered2, correlation_threshold=0.6, num_cores=4):
     
     """
     Process and merge probes based on correlation thresholds using multiple cores.
 
     :param me_filtered2: pd.DataFrame, methylation data with necessary columns for probe processing
     :param correlation_threshold: float, default=0.6, threshold for merging probes within the same region
-    :param num_cores: int, default=16, number of cores for parallel processing
+    :param num_cores: int, default=4, number of cores for parallel processing
     :return: pd.DataFrame with merged and unique probes
     """
     regions2 = me_filtered2.index.str.replace('_cg[0-9]+', '_') + me_filtered2['pom_region']
@@ -953,215 +953,115 @@ def forest_plot(conclusion_metrics,
 
 
 def categorize_meth(meth_series, down_threshold=.2, up_threshold=.7, plot=False,
-                    quant_low=0.3, quant_high=0.7):
+                    quant_low=0.3, quant_high=0.7,
+                    kde_grid_points=1000, distance_frac=0.06,
+                    height_quantile=0.17, prominence_frac=0.01):
+    
     """
-    Categorize methylation levels as 'Not/Low_methyl', 'Medium_methyl', or 'Highly_methyl'.
+    Categorize methylation levels for a single probe using thresholds, KDE peak detection, or GMM clustering.
 
-    :param meth_series: pandas.Series, one methylation feature (use only TUM/MET samples)
-    :param down_threshold: float, threshold for low methylation (values below this are 'Not/Low_methyl')
-    :param up_threshold: float, threshold for high methylation (values above this are 'Highly_methyl')
-    :param plot: bool, if True, plots distribution with categories
-    :param quant_low: float, lower quantile for medium methylation category
-    :param quant_high: float, upper quantile for medium methylation category
-    :return: pandas.Series with categorized methylation levels for each feature
+    :param meth_series: pandas.Series, beta-values of one probe across samples (non-null, numeric)
+    :param down_threshold: float, threshold below which all values are labeled 'Not/Low_methyl'
+    :param up_threshold: float, threshold above which all values are labeled 'Highly_methyl'
+    :param plot: bool, if True, plots KDE + histogram with vertical lines for detected peaks
+    :param quant_low: float, fallback lower quantile for defining 'Not/Low_methyl' if peak/GMM fails
+    :param quant_high: float, fallback upper quantile for defining 'Highly_methyl' if peak/GMM fails
+    :param kde_grid_points: int, number of grid points for KDE calculation
+    :param distance_frac: float, minimum distance between peaks as a fraction of kde_grid_points
+    :param height_quantile: float, quantile threshold to filter low peaks based on KDE height
+    :param prominence_frac: float, fraction of KDE std used to define minimum peak prominence
+    :return: tuple of two elements:
+             - pandas.Series with methylation categories: 'Not/Low_methyl', 'Medium_methyl', or 'Highly_methyl'
+             - pandas.Series with up to three peak values: 'peak_1', 'peak_2', 'peak_3' (NaN if not found)
     """
+    
     feature = meth_series.name
-    meth_series = meth_series[meth_series.notna()]
-    meth_series = meth_series.astype(float)
+    meth_series = meth_series[meth_series.notna()].astype(float)
     feature_values_i = pd.DataFrame(meth_series)
     feature_values_i['value'] = feature_values_i[feature]
+    peak_result = pd.Series([np.nan, np.nan, np.nan], index=['peak_1', 'peak_2', 'peak_3'], name=feature)
 
     # annotate features with low methylation range [0:0.2]
     if feature_values_i[feature].max() < down_threshold:
-
         feature_values_i[feature] = 'Not/Low_methyl'
+        return feature_values_i[feature], peak_result
 
-        if plot:
-            sns.distplot(feature_values_i['value'],
-                         hist=False, rug=True, color='#FFD3D3')
-            plt.legend(labels=['Not/Low_methyl'])
-            plt.xlabel(f'{feature} methylation')
-            plt.xlim(0, 1)
-
-        categorised = feature_values_i[feature]
-
-    # annotate features with low methylation range [0.7:]
+    # annotate features with low methylation range [0.7:1]
     elif feature_values_i[feature].min() >= up_threshold:
-
         feature_values_i[feature] = 'Highly_methyl'
+        return feature_values_i[feature], peak_result
 
-        if plot:
-            sns.distplot(feature_values_i['value'],
-                         hist=False, rug=True, color='#D50000')
-            plt.legend(labels=['Highly_methyl'])
-            plt.xlabel(f'{feature} methylation')
-            plt.xlim(0, 1)
+    # Identify the number and location of the peaks
+    kde = gaussian_kde(feature_values_i['value'])
+    x = np.linspace(feature_values_i['value'].min(), feature_values_i['value'].max(), kde_grid_points)
+    pdf = kde(x)
 
-        categorised = feature_values_i[feature]
+    height_threshold = np.quantile(pdf, height_quantile)
+    peak_distance = int(kde_grid_points * distance_frac)
+    peak_prominence = np.std(pdf) * prominence_frac
+
+    maxima, properties = signal.find_peaks(pdf, height=height_threshold,
+                                           distance=peak_distance,
+                                           prominence=peak_prominence)
+
+    peak_vals = x[maxima]
+    sorted_peaks = np.sort(peak_vals)[::-1][:3]  # top 3, descending
+    for i, val in enumerate(sorted_peaks):
+        peak_result.iloc[i] = val
+
+    num_peaks = len(sorted_peaks)
+    if num_peaks == 1:
+        gmm = GaussianMixture(n_components=3, covariance_type='full')
+        gmm.fit(meth_series.to_numpy().reshape(-1, 1))
+        labels = gmm.predict(meth_series.to_numpy().reshape(-1, 1))
+        feature_values_i['labels'] = labels
+
+        if len(np.unique(labels)) == 3:
+            means = feature_values_i.groupby('labels')[feature].mean().sort_values()
+            down_cl_threshold = means.iloc[0]
+            up_cl_threshold = means.iloc[2]
+        else:
+            q_low = feature_values_i[feature].quantile(quant_low)
+            q_high = feature_values_i[feature].quantile(quant_high)
+            down_cl_threshold, up_cl_threshold = q_low, q_high
+
+    elif num_peaks == 2:
+        warnings.warn(f'Feature {feature} has bimodal distribution. Review manually.')
+        down_cl_threshold, up_cl_threshold = sorted_peaks[1], sorted_peaks[0]
+
+    elif num_peaks == 3:
+        warnings.warn(f'Feature {feature} has multimodal distribution. Review manually.')
+        down_cl_threshold = sorted_peaks[2]
+        up_cl_threshold = np.median(sorted_peaks)
 
     else:
-        kde = gaussian_kde(feature_values_i[feature])
-        x = np.linspace(feature_values_i[feature].min(),
-                        feature_values_i[feature].max(), 1000)
-        pdf = kde(x)
-        
-        height_threshold = np.quantile(pdf, 0.4)  #was 1.1
-    
-        prominence = np.std(pdf) * 0.03
-        
-        maxima, _ = signal.find_peaks(pdf, height=height_threshold, 
-                                      prominence=prominence
-                                     )
+        q_low = feature_values_i[feature].quantile(quant_low)
+        q_high = feature_values_i[feature].quantile(quant_high)
+        down_cl_threshold, up_cl_threshold = q_low, q_high
 
-        # Identify the number and location of the peaks
-        if len(maxima) == 1:
-            peak_vals = pd.Series([x[maxima[0]]], index=['peak_1'])
-        elif len(maxima) == 2:
-            if pdf[maxima[0]] >= pdf[maxima[1]]:
-                peak_vals = pd.Series([x[maxima[0]], x[maxima[1]]], index=['peak_1', 'peak_2'])
-            else:
-                peak_vals = pd.Series([x[maxima[1]], x[maxima[0]]], index=['peak_1', 'peak_2'])
-        else:
-            peak_vals = pd.Series([x[maxima[0]], x[maxima[1]], x[maxima[2]]], index=['peak_1', 'peak_2', 'peak_3'])
+    feature_values_i[feature] = np.where(feature_values_i['value'] < down_cl_threshold,
+                                         'Not/Low_methyl',
+                                         np.where(feature_values_i['value'] > up_cl_threshold,
+                                                  'Highly_methyl', 'Medium_methyl'))
 
-        # Save the peak values to a separate dataframe if the peak height is above a certain threshold
-        peak_df = pd.DataFrame()
-        for peak in peak_vals.index:
-            if pdf[int(np.round((peak_vals[peak] - feature_values_i[feature].min()) / (
-                    feature_values_i[feature].max() - feature_values_i[feature].min()) * 999))] > 1.1:
-                peak_df[peak] = pd.Series([peak_vals[peak]])
-        peak_df.index = [feature]
+    if plot and num_peaks > 0:
+        sns.histplot(feature_values_i['value'], bins=40, stat='density', color='gray', kde=True)
+        for val in sorted_peaks:
+            if not pd.isna(val):
+                plt.axvline(x=val, color='red', linestyle='--')
+        plt.title(feature)
+        plt.xlabel("Beta-value")
+        plt.xlim(0, 1)
+        plt.tight_layout()
+        plt.show()
 
-        # 1 peak
-        if len(peak_df.columns) == 1:
+    return feature_values_i[feature], peak_result
 
-            gmm = GaussianMixture(n_components=3, covariance_type='full')
-            gmm.fit(meth_series.to_numpy().reshape(-1, 1))
-            labels = gmm.predict(meth_series.to_numpy().reshape(-1, 1))
-
-            feature_values_i['labels'] = labels
-
-            if len(feature_values_i['labels'].unique()) == 3:
-
-                cl0 = (feature_values_i[feature][feature_values_i.labels == 0]).mean()
-                cl1 = (feature_values_i[feature][feature_values_i.labels == 1]).mean()
-                cl2 = (feature_values_i[feature][feature_values_i.labels == 2]).mean()
-
-                up_cl_threshold = np.median([cl0, cl1, cl2])
-                down_cl_threshold = np.min([cl0, cl1, cl2])
-
-                feature_values_i[feature] = np.where(feature_values_i[feature] < down_cl_threshold,
-                                                     'Not/Low_methyl',
-                                                     np.where(feature_values_i[feature] > up_cl_threshold,
-                                                              'Highly_methyl', 'Medium_methyl'))
-                categorised = feature_values_i[feature]
-
-                if plot:
-                    sns.distplot(feature_values_i[feature_values_i[feature] == 'Not/Low_methyl']['value'],
-                                 hist=False, rug=True, color='#FFD3D3', kde_kws={'linestyle': '-'})
-                    sns.distplot(feature_values_i[feature_values_i[feature] == 'Medium_methyl']['value'],
-                                 hist=False, rug=True, color='#FF8787', kde_kws={'linestyle': '-'})
-                    sns.distplot(feature_values_i[feature_values_i[feature] == 'Highly_methyl']['value'],
-                                 hist=False, rug=True, color='#D50000', kde_kws={'linestyle': '-'})
-                    plt.legend(labels=['Not/Low_methyl', 'Medium_methyl', 'Highly_methyl'])
-                    plt.axvline(x=up_cl_threshold, color='black', linestyle=':')
-                    plt.axvline(x=down_cl_threshold, color='black', linestyle=':')
-                    plt.xlabel(f'{feature} methylation GMM')
-                    plt.xlim(0, 1)
-                else:
-                    pass
-
-            else:
-                # for cases when GMM didn't work
-                q_low = feature_values_i[feature].quantile(quant_low)
-                q_high = feature_values_i[feature].quantile(quant_high)
-
-                feature_values_i[feature] = np.where(feature_values_i[feature] < q_low,
-                                                     'Not/Low_methyl',
-                                                     np.where(feature_values_i[feature] > q_high,
-                                                              'Highly_methyl', 'Medium_methyl'))
-                categorised = feature_values_i[feature]
-
-                if plot:
-                    sns.distplot(feature_values_i[feature_values_i[feature] == 'Not/Low_methyl']['value'],
-                                 hist=False, rug=True, color='#FFD3D3', kde_kws={'linestyle': '-'})
-                    sns.distplot(feature_values_i[feature_values_i[feature] == 'Medium_methyl']['value'],
-                                 hist=False, rug=True, color='#FF8787', kde_kws={'linestyle': '-'})
-                    sns.distplot(feature_values_i[feature_values_i[feature] == 'Highly_methyl']['value'],
-                                 hist=False, rug=True, color='#D50000', kde_kws={'linestyle': '-'})
-                    plt.legend(labels=['Not/Low_methyl', 'Medium_methyl', 'Highly_methyl'])
-                    plt.axvline(x=q_high, color='black', linestyle=':')
-                    plt.axvline(x=q_low, color='black', linestyle=':')
-                    plt.xlabel(f'{feature} methylation quantiles')
-                    plt.xlim(0, 1)
-                else:
-                    pass
-
-
-        # 2 peaks
-        elif len(peak_df.columns) == 2:
-
-            warnings.warn(f'This feature {feature} has bimodal distribution you may want to review it manually')
-
-            up_cl_threshold = peak_df.loc[feature].max()
-            down_cl_threshold = peak_df.loc[feature].min()
-
-            feature_values_i[feature] = np.where(feature_values_i[feature] < down_cl_threshold,
-                                                 'Not/Low_methyl',
-                                                 np.where(feature_values_i[feature] >= up_cl_threshold,
-                                                          'Highly_methyl', 'Medium_methyl'))
-            if plot:
-                sns.distplot(feature_values_i[feature_values_i[feature] == 'Not/Low_methyl']['value'],
-                             hist=False, rug=True, color='#FFD3D3', kde_kws={'linestyle': '-'})
-                sns.distplot(feature_values_i[feature_values_i[feature] == 'Medium_methyl']['value'],
-                             hist=False, rug=True, color='#FF8787', kde_kws={'linestyle': '-'})
-                sns.distplot(feature_values_i[feature_values_i[feature] == 'Highly_methyl']['value'],
-                             hist=False, rug=True, color='#D50000', kde_kws={'linestyle': '-'})
-                plt.legend(labels=['Not/Low_methyl', 'Medium_methyl', 'Highly_methyl'])
-                plt.axvline(x=up_cl_threshold, color='black', linestyle=':')
-                plt.axvline(x=down_cl_threshold, color='black', linestyle=':')
-                plt.xlabel(f'{feature} methylation KDE+finder')
-                plt.xlim(0, 1)
-            else:
-                pass
-
-            categorised = feature_values_i[feature]
-
-        # 3 peaks
-        elif len(peak_df.columns) == 3:
-
-            warnings.warn(f'This feature {feature} has multimodal distribution you may want to review it manually')
-
-            up_cl_threshold = peak_df.loc[feature].median()
-            down_cl_threshold = peak_df.loc[feature].min()
-
-            feature_values_i[feature] = np.where(feature_values_i[feature] < down_cl_threshold,
-                                                 'Not/Low_methyl',
-                                                 np.where(feature_values_i[feature] > up_cl_threshold,
-                                                          'Highly_methyl', 'Medium_methyl'))
-            if plot:
-                sns.distplot(feature_values_i[feature_values_i[feature] == 'Not/Low_methyl']['value'],
-                             hist=False, rug=True, color='#FFD3D3', kde_kws={'linestyle': '-'})
-                sns.distplot(feature_values_i[feature_values_i[feature] == 'Medium_methyl']['value'],
-                             hist=False, rug=True, color='#FF8787', kde_kws={'linestyle': '-'})
-                sns.distplot(feature_values_i[feature_values_i[feature] == 'Highly_methyl']['value'],
-                             hist=False, rug=True, color='#D50000', kde_kws={'linestyle': '-'})
-                plt.legend(labels=['Not/Low_methyl', 'Medium_methyl', 'Highly_methyl'])
-                plt.axvline(x=up_cl_threshold, color='black', linestyle=':')
-                plt.axvline(x=down_cl_threshold, color='black', linestyle=':')
-                plt.xlabel(f'{feature} methylation KDE+finder')
-                plt.xlim(0, 1)
-            else:
-                pass
-
-            categorised = feature_values_i[feature]
-
-    return categorised
 
 def methylation(df, path=False, sep='\t', header=0, index_col=0, comment=None, **kwargs):
     
     """
-    Load and process methylation data, categorizing methylation levels.
+    Load and process methylation data, categorizing methylation levels and detecting peak values.
 
     :param df: str or pandas.DataFrame, path to methylation data (if path=True) or DataFrame with methylation data
                (if path=False); rows are features, columns include 'chrom', 'start', 'end', and sample names
@@ -1170,22 +1070,32 @@ def methylation(df, path=False, sep='\t', header=0, index_col=0, comment=None, *
     :param header: int, row number to use as column names (passed to pandas.read_csv)
     :param index_col: int, column to use as row names (passed to pandas.read_csv)
     :param comment: str, character indicating lines to skip (passed to pandas.read_csv)
-    :return: pandas.DataFrame with methylation data categorized into 'Not/Low_methyl', 'Medium methyl', 'Highly methyl'
+    :param kwargs: keyword arguments passed to the categorize_meth function (e.g., thresholds, KDE params, plot)
+    :return: tuple of two pandas.DataFrames:
+             - DataFrame with methylation data categorized into 'Not/Low_methyl', 'Medium_methyl', 'Highly_methyl'
+             - DataFrame with up to three detected peak values ('peak_1', 'peak_2', 'peak_3') per feature
     """
+    
     if path:
-        beta_values = pd.read_csv(df, sep=sep, index_col=index_col)
+        beta_values = pd.read_csv(df, sep=sep, header=header, index_col=index_col, comment=comment)
     else:
-        beta_values = df
+        beta_values = df.copy()
 
     regions = beta_values[['chrom', 'start', 'end']]
+    beta_only = beta_values.drop(columns=['chrom', 'start', 'end']).astype(float)
 
-    beta_values = beta_values.loc[:, ~beta_values.columns.isin(['chrom', 'start', 'end'])].astype(float)
+    categorized_df = pd.DataFrame(index=beta_only.index, columns=beta_only.columns)
+    peak_df = pd.DataFrame(index=beta_only.index, columns=['peak_1', 'peak_2', 'peak_3'])
 
-    processed_beta_val = beta_values.apply(lambda x: categorize_meth(x, **kwargs), axis=1)
+    for row in tqdm(beta_only.index):
+        categ, peaks = categorize_meth(beta_only.loc[row], **kwargs)
+        categorized_df.loc[row] = categ
+        peak_df.loc[row] = peaks
 
-    processed_beta_val = pd.concat([regions, processed_beta_val], axis=1)
+    full_categorized_df = pd.concat([regions, categorized_df], axis=1)
 
-    return processed_beta_val
+    return full_categorized_df, peak_df
+
 
 def filter_probes_by_methylation(methylation, threshold=0.7):
     """
