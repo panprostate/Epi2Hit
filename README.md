@@ -15,3 +15,14 @@ The worklow uses already processed data (i.e. processed copy-number profiles, DN
   
 - **data/**: Contains some publicly available data sets used in the analysis.
 
+
+- **docs/**: Contains documentation, including [performance.md](docs/performance.md) with runtime benchmarks, hardware specifications, and scalability notes.
+
+## Performance and Scalability
+
+- **Design:** Modular Python-based workflow with multiprocessing support.  
+- **Runtime on PPCG (~1,030 samples, ~480,000 probes):**  
+  - Preprocessing (input loading, QC): ~30 minutes  
+  - Main analysis: ~4 hours (using 16 cores)  
+ 
+- **Scaling:** Runtime increases approximately linearly with sample size. Applicable to other tumor types and multi-omic cohorts.  
