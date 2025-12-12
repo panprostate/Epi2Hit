@@ -11,6 +11,12 @@ The worklow uses already processed data (i.e. processed copy-number profiles, DN
 
 - **analysis/**: Contains the primary code for the workflow.
   - `Epi2Hit.ipynb`: Jupyter Notebook illustrating the steps of the workflow, including function calls and intermediate plots.
+  - `TCGA_run.ipynb`: Jupyter Notebook that runs the full eCpG discovery pipeline for TCGA samples on chromosome 8.  
+    It:
+    - loads chr8 methylation, ATAC, chromHMM, loop (BEDPE), and TCGA expression data,
+    - runs probe→gene annotation, filtering, chromatin-state assignment, probe merging, loop annotation, and methylation–expression linear regression,
+    - produces the eCpG calls and writes all output files (e.g. `probes_with_loops.tsv`, `probes_with_loops_linreg.tsv`, `TCGA_gene_ann_me.pkl`, `methylation_labeled.tsv`, `methylation_peaks.tsv`, `eCpGs.tsv`),
+    - and generates the plots described in the manuscript (chromHMM state barplot, merged-region correlation heatmaps, forest plots, and per-probe methylation peak plots).
   - `Epi2Hit.py`: Python script with functions used in the workflow.
   
 - **data/**: Contains some publicly available data sets used in the analysis.
