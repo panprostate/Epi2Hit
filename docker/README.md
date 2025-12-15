@@ -410,7 +410,7 @@ But for the full workflow, use a single mounted data directory as shown above.
 ## Additional Information
 
 For issues or questions:
-- epi2hit documentation: (check package documentation)
+- epi2hit documentation: https://pypi.org/project/epi2hit/0.1.2/
 - biallelic_py repository: https://bitbucket.org/weischenfeldt/biallelic_py
 - Docker documentation: https://docs.docker.com/
 
