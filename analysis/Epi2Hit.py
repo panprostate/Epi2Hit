@@ -1738,7 +1738,7 @@ def methylation(df,
         'Stromal', 'Immune', 'epiCMIT.hyper', 'epiCMIT.hypo',
         'pomerantz', 'pom_region', 'regions2', 'loops',
         'coef', 'p_value', 'adjusted_p_value', 'q95l', 'q95h',
-        'rsquared', 'gene', 'eCpGs'
+        'rsquared', 'gene', 'eCpGs', 'corr_plot_path'
     ]
 
     non_sample_meta_cols = [c for c in non_sample_meta_cols if c in beta_values.columns]
