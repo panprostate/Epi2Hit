@@ -24,10 +24,19 @@ The worklow uses already processed data (i.e. processed copy-number profiles, DN
 
 - **docs/**: Contains documentation, including [performance.md](docs/performance.md) with runtime benchmarks, hardware specifications, and scalability notes.
 
+
+## Docker (containerized reproducible run)
+
+We provide a Docker container that bundles the Epi2Hit workflow (and optional downstream biallelic analysis) with pinned software dependencies to facilitate portable and reproducible execution.
+
+➡️ See **[docker/README.md](docker/README.md)** for full build/run instructions, recommended directory layout, and end-to-end example commands.
+
+
 ## Performance and Scalability
 
 - **Design:** Modular Python-based workflow with multiprocessing support.  
-- **Runtime on PPCG (~1,030 samples, ~480,000 probes):**  
+- **Runtime on PPCG (~1,000 samples, ~450,000 probes):**  
+  - Jobs were typically submitted with a memory request of up to 40 GB RAM.
   - Preprocessing (input loading, QC): ~30 minutes  
   - Main analysis: ~4 hours (using 16 cores)  
  
