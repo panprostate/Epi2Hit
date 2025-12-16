@@ -24,8 +24,9 @@ The worklow uses already processed data (i.e. processed copy-number profiles, DN
 
 - **docs/**: Contains documentation, including [performance.md](docs/performance.md) with runtime benchmarks, hardware specifications, and scalability notes.
 
+## Running Epi2Hit
 
-## Docker
+### Docker
 
 We provide a Docker container that bundles the Epi2Hit workflow (and optional downstream biallelic analysis) with pinned software dependencies to facilitate portable and reproducible execution.
 
@@ -41,3 +42,10 @@ We provide a Docker container that bundles the Epi2Hit workflow (and optional do
   - Main analysis: ~4 hours (using 16 cores)  
  
 - **Scaling:** Runtime increases approximately linearly with sample size. Applicable to other tumor types and multi-omic cohorts.  
+
+
+## Citation
+
+If you use **Epi2Hit** in your work, please cite:
+
+Kiriy et al. Recurrent mechanisms of biallelic epigenetic inactivation reveal new putative tumour suppressor genes in prostate cancer
