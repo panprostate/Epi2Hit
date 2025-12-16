@@ -25,7 +25,7 @@ The worklow uses already processed data (i.e. processed copy-number profiles, DN
 - **docs/**: Contains documentation, including [performance.md](docs/performance.md) with runtime benchmarks, hardware specifications, and scalability notes.
 
 
-## Docker (containerized reproducible run)
+## Docker
 
 We provide a Docker container that bundles the Epi2Hit workflow (and optional downstream biallelic analysis) with pinned software dependencies to facilitate portable and reproducible execution.
 
