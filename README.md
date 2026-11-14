@@ -1,11 +1,18 @@
-# Epi2Hit workflow
+## Recurrent mechanisms of biallelic epigenetic inactivation reveal new putative tumour suppressor genes in prostate cancer
 
-This repository contains the code and data necessariy to reproduce the results, figures and tables of the publication "Recurrent mechanisms of biallelic epigenetic inactivation reveal new putative tumour suppressor genes in prostate cancer" by Kiriy D et al. 
-The worklow uses already processed data (i.e. processed copy-number profiles, DNA-methylation profiles). The pipelines used to process raw data are described in a companion manuscript by the PPCG Technical Working Group.
+Kiriy D, … Pan Prostate Cancer Group (PPCG), Weischenfeldt J., ***Nature Communications*** (2026)
+https://www.nature.com/articles/s41467-026-72182-5
+
+> If you use this code or the **Epi2Hit** workflow, please cite the paper above.
+> 
+
+### Epi2Hit Workflow
+This repository contains the code and data necessary to reproduce the results, figures and tables of the publication.  
+The workflow uses already processed data (i.e. processed copy-number profiles, DNA-methylation profiles). The pipelines used to process raw data are described in a companion manuscript by the PPCG Technical Working Group.
 
 ![Epi2Hit Workflow](https://github.com/panprostate/Epi2Hit/blob/main/img/workflow.png)
 
-**Epi2Hit** is an integrative computational method that leverages DNA sequencing, epigenomic profiling, gene expression, chromatin accessibility, and Hi-C data to identify biallelic inactivation of tumor suppressor genes. This workflow identifies cases where one allele undergoes DNA methylation in promoter and enhancer regions, while the other allele is affected by genomic loss. 
+**Epi2Hit** is an integrative computational method that leverages DNA sequencing, epigenomic profiling, gene expression, chromatin accessibility, and Hi-C data to identify biallelic inactivation of tumour suppressor genes. This workflow identifies cases where one allele undergoes DNA methylation in promoter and enhancer regions, while the other allele is affected by genomic loss. 
 
 ## Repository Structure
 
